@@ -1,0 +1,22 @@
+{
+  "name": "mpdebugmode",
+  "version": "1.0.0",
+  "description": "Debug mode for PrestaShop",
+  "main": "Gruntfile.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/firstred/mpdebugmode.git"
+  },
+  "keywords": [],
+  "author": "Michael Dekker",
+  "license": "AFL-3.0",
+  "homepage": "https://github.com/firstred/mpdebugmode.git",
+  "devDependencies": {
+    "grunt": "^0.4.5",
+    "grunt-cli": "^0.1.13",
+    "grunt-contrib-compress": "^0.14.0"
+  }
+}
