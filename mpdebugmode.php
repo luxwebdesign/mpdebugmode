@@ -38,7 +38,7 @@ class Mpdebugmode extends Module
     {
         $this->name = 'mpdebugmode';
         $this->tab = 'administration';
-        $this->version = '1.0.0';
+        $this->version = '1.1.0';
         $this->author = 'Michael Dekker';
         $this->need_instance = 0;
 
@@ -62,6 +62,11 @@ class Mpdebugmode extends Module
      */
     public function install()
     {
+        if (!function_exists('preg_match')) {
+            Context::getContext()->controller->errors[] = Tools::displayError($this->l('mpdebugmode: Regex (PHP-module: PCRE) support is missing from the server. Installation has been cancelled to prevent damage.'));
+            parent::uninstall();
+            return false;
+        }
         Configuration::updateValue(self::DEBUGMODE_ENABLED, false);
 
         return parent::install() && $this->registerHook('backOfficeHeader');
@@ -144,13 +149,13 @@ class Mpdebugmode extends Module
         return array(
             'form' => array(
                 'legend' => array(
-                'title' => $this->l('Settings'),
-                'icon' => 'icon-cogs',
+                'title' => Translate::getAdminTranslation('Debug mode', 'AdminPerformance'),
+                'icon' => 'icon-bug',
                 ),
                 'input' => array(
                     array(
                         'type' => 'switch',
-                        'label' => $this->l('Dev mode enabled'),
+                        'label' => Translate::getAdminTranslation('Debug mode', 'AdminPerformance'),
                         'name' => self::DEBUGMODE_ENABLED,
                         'is_bool' => true,
                         'values' => array(
@@ -236,7 +241,8 @@ class Mpdebugmode extends Module
     */
     public function hookBackOfficeHeader()
     {
-        if ($this->isDebugModeEnabled()) {
+        // PrestaShop 1.7 already has a debug icon
+        if (version_compare(_PS_VERSION_, '1.7.0.0', '<') && $this->isDebugModeEnabled()) {
             $this->context->smarty->assign(array(
                 'debugmode_link' => $this->context->link->getAdminLink('AdminModules', true).'&configure=mpdebugmode&module_name=mpdebugmode&tab_module=administration'
             ));
@@ -304,6 +310,10 @@ class Mpdebugmode extends Module
             return self::ERROR_NO_WRITE_ACCESS;
         }
 
+        if (function_exists('opcache_invalidate')) {
+            opcache_invalidate(_PS_ROOT_DIR_.'/config/defines.inc.php');
+        }
+
         return self::SUCCEEDED;
     }
 
@@ -328,6 +338,10 @@ class Mpdebugmode extends Module
         $defines =  preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', false);', $defines);
         if (!@file_put_contents(_PS_ROOT_DIR_.'/config/defines.inc.php', $defines)) {
             return self::ERROR_NO_WRITE_ACCESS;
+        }
+
+        if (function_exists('opcache_invalidate')) {
+            opcache_invalidate(_PS_ROOT_DIR_.'/config/defines.inc.php');
         }
 
         return self::SUCCEEDED;
