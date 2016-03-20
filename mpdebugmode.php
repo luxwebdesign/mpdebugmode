@@ -25,11 +25,12 @@ class Mpdebugmode extends Module
 {
     const DEBUGMODE_ENABLED = 'MPDEBUGMODE_DEBUGMODE_ENABLED';
 
-    const SUCCEEDED = 0;
-    const ERROR_NO_WRITE_ACCESS = 1;
-    const ERROR_NO_DEFINITION_FOUND = 2;
-    const ERROR_COULD_NOT_BACKUP = 3;
-    const ERROR_NO_READ_ACCESS = 4;
+    const DEBUG_MODE_SUCCEEDED = 0;
+    const DEBUG_MODE_ERROR_NO_READ_ACCESS = 1;
+    const DEBUG_MODE_ERROR_NO_READ_ACCESS_CUSTOM = 2;
+    const DEBUG_MODE_ERROR_NO_WRITE_ACCESS = 3;
+    const DEBUG_MODE_ERROR_NO_WRITE_ACCESS_CUSTOM = 4;
+    const DEBUG_MODE_ERROR_NO_DEFINITION_FOUND = 5;
 
     /**
      * Mpdebugmode constructor.
@@ -38,7 +39,7 @@ class Mpdebugmode extends Module
     {
         $this->name = 'mpdebugmode';
         $this->tab = 'administration';
-        $this->version = '1.1.0';
+        $this->version = '1.2.0';
         $this->author = 'Michael Dekker';
         $this->need_instance = 0;
 
@@ -242,7 +243,7 @@ class Mpdebugmode extends Module
     public function hookBackOfficeHeader()
     {
         // PrestaShop 1.7 already has a debug icon
-        if (version_compare(_PS_VERSION_, '1.7.0.0', '<') && $this->isDebugModeEnabled()) {
+        if (version_compare(_PS_VERSION_, '1.7.0.0', '<') && _PS_MODE_DEV_) {
             $this->context->smarty->assign(array(
                 'debugmode_link' => $this->context->link->getAdminLink('AdminModules', true).'&configure=mpdebugmode&module_name=mpdebugmode&tab_module=administration'
             ));
@@ -260,14 +261,18 @@ class Mpdebugmode extends Module
      */
     public function isDebugModeEnabled()
     {
-        $defines = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines.inc.php');
-        if (empty($defines)) {
-            return false;
+        // Always try the custom defines file first
+        $defines_clean = '';
+        if ($this->isDefinesReadable(true)) {
+            $defines_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
         }
 
         $m = array();
-        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines, $m)) {
-            return false;
+        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_clean, $m)) {
+            $defines_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines.inc.php');
+            if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_clean, $m)) {
+                return false;
+            }
         }
 
         if (Tools::strtolower($m[1]) === 'true') {
@@ -280,10 +285,15 @@ class Mpdebugmode extends Module
     /**
      * Check read permission on defines.inc.php
      *
+     * @param bool $custom Whether the custom defines file should be used
      * @return bool Whether the file can be read
      */
-    public function isDefinesReadable()
+    public function isDefinesReadable($custom = false)
     {
+        if ($custom) {
+            return is_readable(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+        }
+
         return is_readable(_PS_ROOT_DIR_.'/config/defines.inc.php');
     }
 
@@ -294,27 +304,43 @@ class Mpdebugmode extends Module
      */
     public function enableDebugMode()
     {
-        if (!copy(_PS_ROOT_DIR_.'/config/defines.inc.php', _PS_ROOT_DIR_.'/config/defines.old.php')) {
-            return self::ERROR_COULD_NOT_BACKUP;
+        // Check custom defines file first
+        if ($this->isDefinesReadable(true)) {
+            // Take commented lines into account
+            $defines_custom_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+            $defines_custom = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+            if (!empty($defines_custom_clean) && preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_custom_clean)) {
+                $defines_custom = preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', true);', $defines_custom);
+                if (!@file_put_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php', $defines_custom)) {
+                    return self::DEBUG_MODE_ERROR_NO_WRITE_ACCESS_CUSTOM;
+                }
+
+                if (function_exists('opcache_invalidate')) {
+                    opcache_invalidate(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+                }
+
+                return self::DEBUG_MODE_SUCCEEDED;
+            }
         }
 
+        if (!$this->isDefinesReadable()) {
+            return self::DEBUG_MODE_ERROR_NO_READ_ACCESS;
+        }
+        $defines_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines.inc.php');
         $defines = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines.inc.php');
-        if (empty($defines)) {
-            return self::ERROR_NO_READ_ACCESS;
+        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_clean)) {
+            return self::DEBUG_MODE_ERROR_NO_DEFINITION_FOUND;
         }
-        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines)) {
-            return self::ERROR_NO_DEFINITION_FOUND;
-        }
-        $defines =  preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', true);', $defines);
+        $defines = preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', true);', $defines);
         if (!@file_put_contents(_PS_ROOT_DIR_.'/config/defines.inc.php', $defines)) {
-            return self::ERROR_NO_WRITE_ACCESS;
+            return self::DEBUG_MODE_ERROR_NO_WRITE_ACCESS;
         }
 
         if (function_exists('opcache_invalidate')) {
             opcache_invalidate(_PS_ROOT_DIR_.'/config/defines.inc.php');
         }
 
-        return self::SUCCEEDED;
+        return self::DEBUG_MODE_SUCCEEDED;
     }
 
     /**
@@ -324,26 +350,41 @@ class Mpdebugmode extends Module
      */
     public function disableDebugMode()
     {
-        if (!copy(_PS_ROOT_DIR_.'/config/defines.inc.php', _PS_ROOT_DIR_.'/config/defines.old.php')) {
-            return self::ERROR_COULD_NOT_BACKUP;
+        // Check custom defines file first
+        if ($this->isDefinesReadable(true)) {
+            $defines_custom_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+            $defines_custom = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+            if (!empty($defines_custom_clean) && preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_custom_clean)) {
+                $defines_custom = preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', false);', $defines_custom);
+                if (!@file_put_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php', $defines_custom)) {
+                    return self::DEBUG_MODE_ERROR_NO_WRITE_ACCESS_CUSTOM;
+                }
+
+                if (function_exists('opcache_invalidate')) {
+                    opcache_invalidate(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+                }
+
+                return self::DEBUG_MODE_SUCCEEDED;
+            }
         }
 
+        if (!$this->isDefinesReadable()) {
+            return self::DEBUG_MODE_ERROR_NO_READ_ACCESS;
+        }
+        $defines_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines.inc.php');
         $defines = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines.inc.php');
-        if (empty($defines)) {
-            return self::ERROR_NO_READ_ACCESS;
+        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_clean)) {
+            return self::DEBUG_MODE_ERROR_NO_DEFINITION_FOUND;
         }
-        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines)) {
-            return self::ERROR_NO_DEFINITION_FOUND;
-        }
-        $defines =  preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', false);', $defines);
+        $defines = preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', false);', $defines);
         if (!@file_put_contents(_PS_ROOT_DIR_.'/config/defines.inc.php', $defines)) {
-            return self::ERROR_NO_WRITE_ACCESS;
+            return self::DEBUG_MODE_ERROR_NO_WRITE_ACCESS;
         }
 
         if (function_exists('opcache_invalidate')) {
             opcache_invalidate(_PS_ROOT_DIR_.'/config/defines.inc.php');
         }
 
-        return self::SUCCEEDED;
+        return self::DEBUG_MODE_SUCCEEDED;
     }
 }
