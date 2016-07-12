@@ -23,4 +23,4 @@ admin-dev/import/
 download/
 /img/*
 node_modules/
-mpdebugmode.zip
+*mpdebugmode*.zip

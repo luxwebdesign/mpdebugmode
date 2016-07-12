@@ -39,7 +39,7 @@ class Mpdebugmode extends Module
     {
         $this->name = 'mpdebugmode';
         $this->tab = 'administration';
-        $this->version = '1.2.0';
+        $this->version = '1.2.1';
         $this->author = 'Michael Dekker';
         $this->need_instance = 0;
 
@@ -66,6 +66,7 @@ class Mpdebugmode extends Module
         if (!function_exists('preg_match')) {
             Context::getContext()->controller->errors[] = Tools::displayError($this->l('mpdebugmode: Regex (PHP-module: PCRE) support is missing from the server. Installation has been cancelled to prevent damage.'));
             parent::uninstall();
+
             return false;
         }
         Configuration::updateValue(self::DEBUGMODE_ENABLED, false);
@@ -98,7 +99,7 @@ class Mpdebugmode extends Module
             /**
              * If values have been submitted in the form, process.
              */
-            if (((bool)Tools::isSubmit('submitMpdebugmodeModule')) == true) {
+            if (((bool) Tools::isSubmit('submitMpdebugmodeModule')) == true) {
                 $output .= $this->postProcess();
             }
         }
@@ -163,13 +164,13 @@ class Mpdebugmode extends Module
                             array(
                                 'id' => 'active_on',
                                 'value' => true,
-                                'label' => $this->l('Enabled')
+                                'label' => $this->l('Enabled'),
                             ),
                             array(
                                 'id' => 'active_off',
                                 'value' => false,
-                                'label' => $this->l('Disabled')
-                            )
+                                'label' => $this->l('Disabled'),
+                            ),
                         ),
                     ),
                 ),
@@ -187,9 +188,7 @@ class Mpdebugmode extends Module
      */
     protected function getConfigFormValues()
     {
-        return array(
-            self::DEBUGMODE_ENABLED => $this->isDebugModeEnabled()
-        );
+        return array(self::DEBUGMODE_ENABLED => $this->isDebugModeEnabled());
     }
 
     /**
@@ -202,24 +201,24 @@ class Mpdebugmode extends Module
         $output = '';
 
         if (Tools::isSubmit(self::DEBUGMODE_ENABLED)) {
-            if ((bool)Tools::getValue(self::DEBUGMODE_ENABLED)) {
-                $error_code = $this->enableDebugMode();
+            if ((bool) Tools::getValue(self::DEBUGMODE_ENABLED)) {
+                $errorCode = $this->enableDebugMode();
             } else {
-                $error_code = $this->disableDebugMode();
+                $errorCode = $this->disableDebugMode();
             }
 
-            if (!empty($error_code)) {
-                switch ($error_code) {
-                    case self::ERROR_COULD_NOT_BACKUP:
+            if (!empty($errorCode)) {
+                switch ($errorCode) {
+                    case self::DEBUG_MODE_ERROR_NO_WRITE_ACCESS_CUSTOM:
                         $output .= $this->displayError(sprintf($this->l('Error: could not write to file: %s. Make sure that the file or directory is writable.'), _PS_ROOT_DIR_.'/config/defines.old.php'));
                         break;
-                    case self::ERROR_NO_DEFINITION_FOUND:
+                    case self::DEBUG_MODE_ERROR_NO_DEFINITION_FOUND:
                         $output .= $this->displayError(sprintf($this->l('Error: could not find whether debug mode is enabled. Make sure you have the correct permissions set on the file %s'), _PS_ROOT_DIR_.'/config/defines.inc.php'));
                         break;
-                    case self::ERROR_NO_WRITE_ACCESS:
+                    case self::DEBUG_MODE_ERROR_NO_WRITE_ACCESS:
                         $output .= $this->displayError(sprintf($this->l('Error: could not write to file. Make sure you have the correct permissions set on the file %s'), _PS_ROOT_DIR_.'/config/defines.inc.php'));
                         break;
-                    case self::ERROR_NO_READ_ACCESS:
+                    case self::DEBUG_MODE_ERROR_NO_READ_ACCESS:
                         $output .= $this->displayError(sprintf($this->l('Error: could not read file. Make sure you have the correct permissions set on the file %s'), _PS_ROOT_DIR_.'/config/defines.inc.php'));
                         break;
                     default:
@@ -245,9 +244,10 @@ class Mpdebugmode extends Module
         // PrestaShop 1.7 already has a debug icon
         if (version_compare(_PS_VERSION_, '1.7.0.0', '<') && _PS_MODE_DEV_) {
             $this->context->smarty->assign(array(
-                'debugmode_link' => $this->context->link->getAdminLink('AdminModules', true).'&configure=mpdebugmode&module_name=mpdebugmode&tab_module=administration'
+                'debugmode_link' => $this->context->link->getAdminLink('AdminModules', true).'&configure=mpdebugmode&module_name=mpdebugmode&tab_module=administration',
             ));
             $this->context->controller->addJquery();
+
             return $this->display(__FILE__, 'dev_mode_js.tpl');
         }
 
@@ -262,15 +262,15 @@ class Mpdebugmode extends Module
     public function isDebugModeEnabled()
     {
         // Always try the custom defines file first
-        $defines_clean = '';
+        $definesClean = '';
         if ($this->isDefinesReadable(true)) {
-            $defines_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+            $definesClean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
         }
 
         $m = array();
-        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_clean, $m)) {
-            $defines_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines.inc.php');
-            if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_clean, $m)) {
+        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $definesClean, $m)) {
+            $definesClean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines.inc.php');
+            if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $definesClean, $m)) {
                 return false;
             }
         }
@@ -307,11 +307,11 @@ class Mpdebugmode extends Module
         // Check custom defines file first
         if ($this->isDefinesReadable(true)) {
             // Take commented lines into account
-            $defines_custom_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
-            $defines_custom = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
-            if (!empty($defines_custom_clean) && preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_custom_clean)) {
-                $defines_custom = preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', true);', $defines_custom);
-                if (!@file_put_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php', $defines_custom)) {
+            $definesCustomClean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+            $definesCustom = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+            if (!empty($definesCustomClean) && preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $definesCustomClean)) {
+                $definesCustom = preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', true);', $definesCustom);
+                if (!@file_put_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php', $definesCustom)) {
                     return self::DEBUG_MODE_ERROR_NO_WRITE_ACCESS_CUSTOM;
                 }
 
@@ -326,9 +326,9 @@ class Mpdebugmode extends Module
         if (!$this->isDefinesReadable()) {
             return self::DEBUG_MODE_ERROR_NO_READ_ACCESS;
         }
-        $defines_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines.inc.php');
+        $definesClean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines.inc.php');
         $defines = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines.inc.php');
-        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_clean)) {
+        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $definesClean)) {
             return self::DEBUG_MODE_ERROR_NO_DEFINITION_FOUND;
         }
         $defines = preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', true);', $defines);
@@ -352,11 +352,11 @@ class Mpdebugmode extends Module
     {
         // Check custom defines file first
         if ($this->isDefinesReadable(true)) {
-            $defines_custom_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
-            $defines_custom = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
-            if (!empty($defines_custom_clean) && preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_custom_clean)) {
-                $defines_custom = preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', false);', $defines_custom);
-                if (!@file_put_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php', $defines_custom)) {
+            $definesCustomClean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+            $definesCustom = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php');
+            if (!empty($definesCustomClean) && preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $definesCustomClean)) {
+                $definesCustom = preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', false);', $definesCustom);
+                if (!@file_put_contents(_PS_ROOT_DIR_.'/config/defines_custom.inc.php', $definesCustom)) {
                     return self::DEBUG_MODE_ERROR_NO_WRITE_ACCESS_CUSTOM;
                 }
 
@@ -371,9 +371,9 @@ class Mpdebugmode extends Module
         if (!$this->isDefinesReadable()) {
             return self::DEBUG_MODE_ERROR_NO_READ_ACCESS;
         }
-        $defines_clean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines.inc.php');
+        $definesClean = php_strip_whitespace(_PS_ROOT_DIR_.'/config/defines.inc.php');
         $defines = Tools::file_get_contents(_PS_ROOT_DIR_.'/config/defines.inc.php');
-        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $defines_clean)) {
+        if (!preg_match('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', $definesClean)) {
             return self::DEBUG_MODE_ERROR_NO_DEFINITION_FOUND;
         }
         $defines = preg_replace('/define\(\'_PS_MODE_DEV_\', ([a-zA-Z]+)\);/Ui', 'define(\'_PS_MODE_DEV_\', false);', $defines);
